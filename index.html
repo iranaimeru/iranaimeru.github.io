@@ -3,120 +3,113 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Stream Chat Viewer</title>
+    <title>Unified Stream Chat</title>
+    <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
     <style>
-        body { margin: 0; padding: 0; background: #1a1a1a; font-family: sans-serif; height: 100vh; display: flex; flex-direction: column; }
-        header { background: #333; color: white; text-align: center; padding: 10px; font-size: 14px; font-weight: bold; }
+        body { margin: 0; padding: 0; background: #1a1a1a; font-family: sans-serif; height: 100vh; display: flex; flex-direction: column; color: white; }
+        header { background: #333; text-align: center; padding: 10px; font-size: 14px; font-weight: bold; }
         
         .input-area { background: #222; padding: 10px; display: flex; flex-direction: column; gap: 8px; border-bottom: 1px solid #444; }
-        .input-row { display: flex; gap: 8px; }
-        select { padding: 8px; border-radius: 4px; border: 1px solid #555; background: #333; color: white; font-size: 14px; }
-        input { flex: 1; padding: 8px; border-radius: 4px; border: 1px solid #555; background: #333; color: white; font-size: 14px; }
-        button { padding: 8px 15px; border: none; border-radius: 4px; background: #007aff; color: white; font-size: 14px; font-weight: bold; cursor: pointer; }
+        input { padding: 8px; border-radius: 4px; border: 1px solid #555; background: #333; color: white; font-size: 14px; }
+        button { padding: 10px; border: none; border-radius: 4px; background: #007aff; color: white; font-size: 14px; font-weight: bold; cursor: pointer; }
         button:active { opacity: 0.8; }
         
-        .chat-grid { flex: 1; display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; padding: 5px; background: #111; overflow-y: auto; }
-        .chat-box { display: flex; flex-direction: column; background: #000; border-radius: 8px; overflow: hidden; border: 1px solid #333; min-height: 200px; }
-        .chat-label { background: #2a2a2a; color: #fff; font-size: 11px; padding: 4px 8px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
-        .platform-twitch { color: #a970ff; }
-        .platform-youtube { color: #ff0000; }
-        iframe { width: 100%; flex: 1; border: none; background: #000; }
+        /* 統合された1つのタイムライン */
+        .chat-timeline { flex: 1; padding: 10px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; background: #111; }
+        .comment-row { font-size: 14px; line-height: 1.4; word-break: break-all; animation: fadeIn 0.2s ease-out; }
+        .badge { margin-right: 4px; }
+        .user-name { font-weight: bold; color: #aaa; margin-right: 6px; }
+        .twitch-user { color: #a970ff; }
+        .youtube-user { color: #ff4a4a; }
+        .comment-text { color: #fff; }
+        
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
     </style>
 </head>
 <body>
 
-    <header>配信コメントビューア</header>
+    <header>統合コメントビューア</header>
 
     <div class="input-area">
-        <div class="input-row">
-            <select id="platformSelect">
-                <option value="twitch">Twitch</option>
-                <option value="youtube">YouTube</option>
-            </select>
-            <input type="text" id="streamUrl" placeholder="配信URLをペースト">
-            <button onclick="addChat()">追加</button>
-        </div>
+        <input type="text" id="twitchInput" placeholder="Twitch チャンネル名 (例: fps_shaka)">
+        <input type="text" id="youtubeInput" placeholder="YouTube 配信URL または 動画ID">
+        <button onclick="connectStreams()">配信に接続</button>
     </div>
 
-    <div class="chat-grid" id="chatGrid"></div>
+    <div class="chat-timeline" id="chatTimeline"></div>
 
     <script>
-        const CURRENT_DOMAIN = "iranaimeru.github.io";
-        let chatCount = 0;
-        const maxChats = 4;
+        // 【ここを自分のRenderのURLに書き換える】
+        const SERVER_URL = "https://stream-comment-api.onrender.com"; 
+        
+        let socket = null;
 
-        function addChat() {
-            if (chatCount >= maxChats) {
-                alert("同時表示は最大4つまでです。");
-                return;
-            }
+        function connectStreams() {
+            const twitchChannel = document.getElementById('twitchInput').value.trim();
+            const youtubeInput = document.getElementById('youtubeInput').value.trim();
+            
+            if (!twitchChannel && !youtubeInput) return;
 
-            const platform = document.getElementById('platformSelect').value;
-            const urlInput = document.getElementById('streamUrl').value.trim();
-            if (!urlInput) return;
-
-            let targetSrc = '';
-            let displayName = '';
-
-            if (platform === 'twitch') {
-                let channelName = '';
+            // YouTubeのURLからIDを抽出
+            let youtubeVideoId = youtubeInput;
+            if (youtubeInput.includes('http')) {
                 try {
-                    const url = new URL(urlInput);
-                    const pathParts = url.pathname.split('/').filter(p => p);
-                    channelName = pathParts.length > 0 ? pathParts[0] : urlInput;
-                } catch (e) {
-                    channelName = urlInput;
-                }
-                if (channelName) {
-                    targetSrc = `https://www.twitch.tv/embed/${channelName}/chat?parent=${CURRENT_DOMAIN}`;
-                    displayName = `Twitch: ${channelName}`;
-                }
-            } else if (platform === 'youtube') {
-                let videoId = '';
-                try {
-                    const url = new URL(urlInput);
+                    const url = new URL(youtubeInput);
                     if (url.hostname.includes('youtube.com')) {
-                        videoId = url.searchParams.get('v');
-                        if (!videoId && url.pathname.startsWith('/live/')) {
-                            videoId = url.pathname.split('/')[2];
+                        youtubeVideoId = url.searchParams.get('v');
+                        if (!youtubeVideoId && url.pathname.startsWith('/live/')) {
+                            youtubeVideoId = url.pathname.split('/')[2];
                         }
                     } else if (url.hostname === 'youtu.be') {
-                        videoId = url.pathname.split('/')[1];
+                        youtubeVideoId = url.pathname.split('/')[1];
                     }
                 } catch (e) {
-                    videoId = urlInput;
-                }
-                if (videoId) {
-                    targetSrc = `https://www.youtube.com/live_chat?v=${videoId}&embed_domain=${CURRENT_DOMAIN}`;
-                    displayName = `YouTube ID: ${videoId}`;
+                    youtubeVideoId = youtubeInput;
                 }
             }
 
-            if (targetSrc) {
-                chatCount++;
-                const grid = document.getElementById('chatGrid');
-                
-                const chatBox = document.createElement('div');
-                chatBox.className = 'chat-box';
-                
-                const label = document.createElement('div');
-                label.className = `chat-label platform-${platform}`;
-                label.innerHTML = `<span>${displayName}</span><span style="cursor:pointer;color:#aaa;" onclick="removeChat(this)">✕</span>`;
-                
-                const iframe = document.createElement('iframe');
-                iframe.src = targetSrc;
-                
-                chatBox.appendChild(label);
-                chatBox.appendChild(iframe);
-                grid.appendChild(chatBox);
-                
-                document.getElementById('streamUrl').value = '';
-            }
-        }
+            // チャット画面をリセット
+            document.getElementById('chatTimeline').innerHTML = '';
 
-        function removeChat(element) {
-            element.closest('.chat-box').remove();
-            chatCount--;
+            // 既存の接続があれば切断
+            if (socket) socket.disconnect();
+
+            // サーバーに接続
+            socket = io(SERVER_URL);
+
+            socket.on('connect', () => {
+                // サーバーに取得要求を送信
+                socket.emit('start-stream', { twitchChannel, youtubeVideoId });
+            });
+
+            // サーバーからコメントを受信したときの処理
+            socket.on('comment', (data) => {
+                const timeline = document.getElementById('chatTimeline');
+                
+                const row = document.createElement('div');
+                row.className = 'comment-row';
+                
+                const badge = document.createElement('span');
+                badge.className = 'badge';
+                badge.innerText = data.badge;
+                
+                const user = document.createElement('span');
+                user.className = `user-name ${data.platform}-user`;
+                user.innerText = data.user;
+                
+                const text = document.createElement('span');
+                text.className = 'comment-text';
+                text.innerText = data.text;
+                
+                row.appendChild(badge);
+                row.appendChild(user);
+                row.appendChild(text);
+                
+                timeline.appendChild(row);
+                
+                // 自動スクロール
+                timeline.scrollTop = timeline.scrollHeight;
+            });
         }
     </script>
 </body>
