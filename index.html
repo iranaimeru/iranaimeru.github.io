@@ -3,21 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>iPhone Stream Chat Viewer</title>
+    <title>Stream Chat Viewer</title>
     <style>
         body { margin: 0; padding: 0; background: #1a1a1a; font-family: sans-serif; height: 100vh; display: flex; flex-direction: column; }
         header { background: #333; color: white; text-align: center; padding: 10px; font-size: 14px; font-weight: bold; }
         
-        /* 入力エリアのスタイル */
         .input-area { background: #222; padding: 10px; display: flex; flex-direction: column; gap: 8px; border-bottom: 1px solid #444; }
         .input-row { display: flex; gap: 8px; }
+        select { padding: 8px; border-radius: 4px; border: 1px solid #555; background: #333; color: white; font-size: 14px; }
         input { flex: 1; padding: 8px; border-radius: 4px; border: 1px solid #555; background: #333; color: white; font-size: 14px; }
         button { padding: 8px 15px; border: none; border-radius: 4px; background: #007aff; color: white; font-size: 14px; font-weight: bold; cursor: pointer; }
         button:active { opacity: 0.8; }
         
-        /* チャット画面のスタイル */
-        .chat-container { flex: 1; display: flex; flex-direction: column; gap: 5px; padding: 5px; }
-        iframe { width: 100%; flex: 1; border: none; border-radius: 8px; background: #000; }
+        .chat-grid { flex: 1; display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; padding: 5px; background: #111; overflow-y: auto; }
+        .chat-box { display: flex; flex-direction: column; background: #000; border-radius: 8px; overflow: hidden; border: 1px solid #333; min-height: 200px; }
+        .chat-label { background: #2a2a2a; color: #fff; font-size: 11px; padding: 4px 8px; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+        .platform-twitch { color: #a970ff; }
+        .platform-youtube { color: #ff0000; }
+        iframe { width: 100%; flex: 1; border: none; background: #000; }
     </style>
 </head>
 <body>
@@ -26,76 +29,94 @@
 
     <div class="input-area">
         <div class="input-row">
-            <input type="text" id="twitchUrl" placeholder="Twitchの配信URLをペースト">
-            <button onclick="loadTwitch()">接続</button>
-        </div>
-        <div class="input-row">
-            <input type="text" id="youtubeUrl" placeholder="YouTubeの配信URLをペースト">
-            <button onclick="loadYoutube()">接続</button>
+            <select id="platformSelect">
+                <option value="twitch">Twitch</option>
+                <option value="youtube">YouTube</option>
+            </select>
+            <input type="text" id="streamUrl" placeholder="配信URLをペースト">
+            <button onclick="addChat()">追加</button>
         </div>
     </div>
 
-    <div class="chat-container">
-        <iframe id="twitchFrame" src="about:blank"></iframe>
-        <iframe id="youtubeFrame" src="about:blank"></iframe>
-    </div>
+    <div class="chat-grid" id="chatGrid"></div>
 
     <script>
         const CURRENT_DOMAIN = "iranaimeru.github.io";
+        let chatCount = 0;
+        const maxChats = 4;
 
-        // TwitchのURLからチャンネル名を抜く処理
-        function loadTwitch() {
-            const urlInput = document.getElementById('twitchUrl').value.trim();
-            if (!urlInput) return;
-
-            let channelName = '';
-            try {
-                // 例: https://www.twitch.tv/fps_shaka?referrer=raid などのURLからパスを分解
-                const url = new URL(urlInput);
-                const pathParts = url.pathname.split('/').filter(p => p);
-                if (pathParts.length > 0) {
-                    channelName = pathParts[0];
-                }
-            } catch (e) {
-                // URLの形式ではなく、直接名前を打たれた場合のセーフティ
-                channelName = urlInput;
+        function addChat() {
+            if (chatCount >= maxChats) {
+                alert("同時表示は最大4つまでです。");
+                return;
             }
 
-            if (channelName) {
-                const frame = document.getElementById('twitchFrame');
-                frame.src = `https://www.twitch.tv/embed/${channelName}/chat?parent=${CURRENT_DOMAIN}`;
+            const platform = document.getElementById('platformSelect').value;
+            const urlInput = document.getElementById('streamUrl').value.trim();
+            if (!urlInput) return;
+
+            let targetSrc = '';
+            let displayName = '';
+
+            if (platform === 'twitch') {
+                let channelName = '';
+                try {
+                    const url = new URL(urlInput);
+                    const pathParts = url.pathname.split('/').filter(p => p);
+                    channelName = pathParts.length > 0 ? pathParts[0] : urlInput;
+                } catch (e) {
+                    channelName = urlInput;
+                }
+                if (channelName) {
+                    targetSrc = `https://www.twitch.tv/embed/${channelName}/chat?parent=${CURRENT_DOMAIN}`;
+                    displayName = `Twitch: ${channelName}`;
+                }
+            } else if (platform === 'youtube') {
+                let videoId = '';
+                try {
+                    const url = new URL(urlInput);
+                    if (url.hostname.includes('youtube.com')) {
+                        videoId = url.searchParams.get('v');
+                        if (!videoId && url.pathname.startsWith('/live/')) {
+                            videoId = url.pathname.split('/')[2];
+                        }
+                    } else if (url.hostname === 'youtu.be') {
+                        videoId = url.pathname.split('/')[1];
+                    }
+                } catch (e) {
+                    videoId = urlInput;
+                }
+                if (videoId) {
+                    targetSrc = `https://www.youtube.com/live_chat?v=${videoId}&embed_domain=${CURRENT_DOMAIN}`;
+                    displayName = `YouTube ID: ${videoId}`;
+                }
+            }
+
+            if (targetSrc) {
+                chatCount++;
+                const grid = document.getElementById('chatGrid');
+                
+                const chatBox = document.createElement('div');
+                chatBox.className = 'chat-box';
+                
+                const label = document.createElement('div');
+                label.className = `chat-label platform-${platform}`;
+                label.innerHTML = `<span>${displayName}</span><span style="cursor:pointer;color:#aaa;" onclick="removeChat(this)">✕</span>`;
+                
+                const iframe = document.createElement('iframe');
+                iframe.src = targetSrc;
+                
+                chatBox.appendChild(label);
+                chatBox.appendChild(iframe);
+                grid.appendChild(chatBox);
+                
+                document.getElementById('streamUrl').value = '';
             }
         }
 
-        // YouTubeのURLからVideoIDを抜く処理
-        function loadYoutube() {
-            const urlInput = document.getElementById('youtubeUrl').value.trim();
-            if (!urlInput) return;
-
-            let videoId = '';
-            try {
-                const url = new URL(urlInput);
-                if (url.hostname.includes('youtube.com')) {
-                    // 通常URL: https://www.youtube.com/watch?v=ABC123xyz00
-                    videoId = url.searchParams.get('v');
-                    
-                    // ライブ専用URLの場合のフォールバック: https://www.youtube.com/live/ABC123xyz00
-                    if (!videoId && url.pathname.startsWith('/live/')) {
-                        videoId = url.pathname.split('/')[2];
-                    }
-                } else if (url.hostname === 'youtu.be') {
-                    // 短縮URL: https://youtu.be/ABC123xyz00
-                    videoId = url.pathname.split('/')[1];
-                }
-            } catch (e) {
-                // 直接11桁のIDを打たれた場合のセーフティ
-                videoId = urlInput;
-            }
-
-            if (videoId) {
-                const frame = document.getElementById('youtubeFrame');
-                frame.src = `https://www.youtube.com/live_chat?v=${videoId}&embed_domain=${CURRENT_DOMAIN}`;
-            }
+        function removeChat(element) {
+            element.closest('.chat-box').remove();
+            chatCount--;
         }
     </script>
 </body>
