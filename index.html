@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iPhone Stream Chat</title>
+    <style>
+        body { margin: 0; padding: 0; background: #1a1a1a; font-family: sans-serif; height: 100vh; display: flex; flex-direction: column; }
+        header { background: #333; color: white; text-align: center; padding: 10px; font-size: 14px; }
+        .chat-container { flex: 1; display: flex; flex-direction: column; gap: 5px; padding: 5px; }
+        iframe { width: 100%; flex: 1; border: none; border-radius: 8px; }
+    </style>
+</head>
+<body>
+
+    <header>配信コメントビューア（iPhoneサイズ最適化）</header>
+
+    <div class="chat-container">
+        <iframe src="https://www.twitch.tv/embed/CHANNEL_NAME/chat?parent=localhost"></iframe>
+        
+        <iframe src="https://www.youtube.com/live_chat?v=VIDEO_ID&embed_domain=localhost"></iframe>
+    </div>
+
+</body>
+</html>
